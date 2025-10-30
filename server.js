@@ -130,28 +130,77 @@ function detectFormationAdvanced(players) {
 
 const FORMATIONS = {
   "4-3-3": [
-    { id:13, zone:[60,120] },{ id:14, zone:[60,180] },
-    { id:15, zone:[120,90] },{ id:16, zone:[120,210] },
-    { id:17, zone:[200,100] },{ id:18, zone:[200,150] },{ id:19, zone:[200,200] },
-    { id:20, zone:[300,80] },{ id:21, zone:[300,150] },{ id:22, zone:[300,220] }
+    // Defesa (linha de 4)
+    { id:13, zone:[80, 80] },   // LD
+    { id:14, zone:[80, 220] },  // LE
+    { id:15, zone:[100, 130] }, // ZAG D
+    { id:16, zone:[100, 170] }, // ZAG E
+
+    // Meio (linha de 3)
+    { id:17, zone:[210, 100] }, // VOL
+    { id:18, zone:[210, 150] }, // MEI C
+    { id:19, zone:[210, 200] }, // MEI E
+
+    // Ataque (linha de 3)
+    { id:20, zone:[320, 80] },  // Ponta D
+    { id:21, zone:[330, 150] }, // Centroavante
+    { id:22, zone:[320, 220] }  // Ponta E
   ],
+
   "3-5-2": [
-    { id:13, zone:[80,120] },{ id:14, zone:[80,180] },{ id:15, zone:[80,150] },
-    { id:16, zone:[160,90] },{ id:17, zone:[160,120] },{ id:18, zone:[160,180] },{ id:19, zone:[160,210] },
-    { id:20, zone:[260,120] },{ id:21, zone:[260,180] },{ id:22, zone:[300,150] }
+    // Defesa (linha de 3)
+    { id:13, zone:[80, 100] },
+    { id:14, zone:[80, 150] },
+    { id:15, zone:[80, 200] },
+
+    // Meio (linha de 5)
+    { id:16, zone:[180, 70] },
+    { id:17, zone:[180, 110] },
+    { id:18, zone:[180, 150] },
+    { id:19, zone:[180, 190] },
+    { id:20, zone:[180, 230] },
+
+    // Ataque (linha de 2)
+    { id:21, zone:[300, 120] },
+    { id:22, zone:[300, 180] }
   ],
+
   "4-4-2": [
-    { id:13, zone:[60,120] },{ id:14, zone:[60,180] },
-    { id:15, zone:[120,90] },{ id:16, zone:[120,210] },
-    { id:17, zone:[200,90] },{ id:18, zone:[200,130] },{ id:19, zone:[200,170] },{ id:20, zone:[200,210] },
-    { id:21, zone:[300,130] },{ id:22, zone:[300,170] }
+    // Defesa
+    { id:13, zone:[70, 80] },
+    { id:14, zone:[70, 220] },
+    { id:15, zone:[100, 130] },
+    { id:16, zone:[100, 170] },
+
+    // Meio
+    { id:17, zone:[200, 80] },
+    { id:18, zone:[200, 130] },
+    { id:19, zone:[200, 170] },
+    { id:20, zone:[200, 220] },
+
+    // Ataque
+    { id:21, zone:[320, 120] },
+    { id:22, zone:[320, 180] }
   ],
+
   "4-2-3-1": [
-    { id:13, zone:[60,120] },{ id:14, zone:[60,180] },
-    { id:15, zone:[120,90] },{ id:16, zone:[120,210] },
-    { id:17, zone:[200,120] },{ id:18, zone:[200,180] },
-    { id:19, zone:[240,100] },{ id:20, zone:[240,150] },{ id:21, zone:[240,200] },
-    { id:22, zone:[300,150] }
+    // Defesa
+    { id:13, zone:[70, 80] },
+    { id:14, zone:[70, 220] },
+    { id:15, zone:[100, 130] },
+    { id:16, zone:[100, 170] },
+
+    // Volantes
+    { id:17, zone:[180, 120] },
+    { id:18, zone:[180, 180] },
+
+    // Meias ofensivos
+    { id:19, zone:[240, 100] },
+    { id:20, zone:[240, 150] },
+    { id:21, zone:[240, 200] },
+
+    // Centroavante
+    { id:22, zone:[320, 150] }
   ]
 };
 
