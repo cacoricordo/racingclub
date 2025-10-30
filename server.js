@@ -217,26 +217,61 @@ function buildRedFromFormation(formationKey, stats, ball, green) {
 // ===== Endpoint /ai/analyze =====
 app.post('/ai/analyze', async (req, res) => {
   try {
-    const body = req.body || {};
-    // Expect green as array of {id,left,top} and ball as {left,top}
-    const green = Array.isArray(body.green) ? body.green : [];
-    const ball = body.ball || {};
+    const { green = [], black = [], ball = {} } = req.body;
 
-    console.log('[AI ANALYZE] recebi:', { greenCount: green.length, ball });
+    console.log('[AI ANALYZE] Recebi:', {
+      greenCount: green.length,
+      blackCount: black.length,
+      ball
+    });
 
+    // === Detecta formações ===
+    const detectedFormation = detectFormationAdvanced(black.length ? black : green);
     const stats = analyzeGreenPositions(green);
-    const detectedFormation = detectFormationAdvanced(green);
-    const { red, phase } = buildRedFromFormation(detectedFormation, stats, ball, green);
 
-    console.log('[AI RESULT]', { detectedFormation, phase, redCount: red.length });
+    // === Determina fase de jogo ===
+    let phase = 'neutro';
+    if (ball.left > CENTER_X && black.some(p => p.left > CENTER_X - 50)) phase = 'defesa';
+    else if (ball.left < CENTER_X && green.some(p => p.left < CENTER_X - 50)) phase = 'ataque';
+    else if (black.every(p => p.left < CENTER_X - 50)) phase = 'avançado'; // adversário todo recuado
 
-    // coach comment via OpenRouter if available
-    let coachComment = 'Mudança tática efetuada.';
+    // === Monta time vermelho conforme tática adversária ===
+    const { red } = buildRedFromFormation(detectedFormation, stats, ball, green);
+
+    // === 🟢 Novo: reposiciona o time verde em relação ao time preto ===
+    const greenAdjusted = [];
+    if (black.length > 0) {
+      // Calcula linha média do adversário
+      const oppAvgX = black.reduce((s, p) => s + p.left, 0) / black.length;
+
+      for (let i = 0; i < Math.min(green.length, black.length); i++) {
+        const g = green[i];
+        const b = black[i];
+        if (!g || !b) continue;
+
+        // Ajustes de posicionamento baseados na fase
+        let offsetX = 0;
+        if (phase === 'defesa') offsetX = -60;       // recua
+        else if (phase === 'ataque') offsetX = 40;   // avança
+        else if (phase === 'avançado') offsetX = 80; // sobe linhas
+
+        const offsetY = (i % 2 === 0 ? -15 : 15);
+        greenAdjusted.push({
+          id: g.id,
+          left: Math.max(30, Math.min(FIELD_WIDTH - 30, b.left + offsetX)),
+          top: Math.max(30, Math.min(FIELD_HEIGHT - 30, b.top + offsetY))
+        });
+      }
+    } else {
+      greenAdjusted.push(...green);
+    }
+
+    // === Gera comentário do treinador ===
+    let coachComment = `O adversário joga em ${detectedFormation}, e nós estamos na fase ${phase}.`;
     const apiKey = process.env.OPENROUTER_KEY;
-
     if (apiKey) {
       try {
-        const prompt = `A equipe adversária está jogando num ${detectedFormation}. A nossa equipa está na fase ${phase}. Em 1-2 frases, comenta a mudança tática como um treinador português sarcástico e direto.`;
+        const prompt = `O time adversário está todo ${phase === 'defesa' ? 'avançado' : 'recuado'} e joga num ${detectedFormation}. O nosso time deve reagir taticamente. Comenta como um treinador português sarcástico.`;
         const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
           method: "POST",
           headers: {
@@ -246,35 +281,33 @@ app.post('/ai/analyze', async (req, res) => {
           body: JSON.stringify({
             model: "gpt-4o-mini",
             messages: [
-              { role: "system", content: "Tu és um treinador português lendário, sarcástico, confiante e direto. Comenta decisões táticas em poucas frases." },
+              { role: "system", content: "Tu és um treinador português lendário, direto e sarcástico. Fala de tática em poucas frases." },
               { role: "user", content: prompt }
             ],
             max_tokens: 80,
             temperature: 0.8
-          }),
-          timeout: 8000
+          })
         });
 
         const data = await response.json();
-        const remote = data?.choices?.[0]?.message?.content?.trim();
-        if (remote && remote.length > 0) coachComment = remote;
-        else console.warn('[AI ANALYZE] OpenRouter devolveu vazio, usando fallback.');
+        coachComment = data?.choices?.[0]?.message?.content?.trim() || coachComment;
       } catch (err) {
-        console.warn('[AI ANALYZE] erro OpenRouter:', err?.message || err);
+        console.warn('[AI ANALYZE] OpenRouter falhou:', err.message);
       }
     }
 
-    // === 🔥 envia resposta JSON válida ===
+    // === Retorno completo ===
     res.json({
       detectedFormation,
       phase,
       red,
+      greenAdjusted,
       coachComment
     });
 
   } catch (err) {
     console.error('[AI ANALYZE] Erro geral:', err);
-    res.status(500).json({ error: 'Falha interna na IA Tática' });
+    res.status(500).json({ error: 'Falha interna na AI Tática 3.5' });
   }
 });
 
