@@ -57,11 +57,11 @@ io.on('connection', (socket) => {
   });
 });
 
-// ======= 🤖 AI Análise 2.0 =======
+// ======= 🤖 AI Análise 3.0 =======
 app.post('/ai/analyze-tactical', (req, res) => {
   const { ball, green, black } = req.body;
 
-  // Detectar formação adversária (simples: baseado na média de Y)
+  // --- Detectar formação adversária ---
   const avgY = black ? black.map(p => p.top) : [];
   let detectedFormation = "4-3-3";
   if (avgY.length) {
@@ -72,24 +72,19 @@ app.post('/ai/analyze-tactical', (req, res) => {
     else if (spread < 300) detectedFormation = "3-5-2";
   }
 
-  // Escolher formação ideal para resposta tática
-  const recommendedFormation = (detectedFormation === "4-3-3") ? "4-4-2" :
-                               (detectedFormation === "3-5-2") ? "4-3-3" :
-                               "3-5-2";
-
-  // === POSIÇÕES TÁTICAS FIXAS DO TIME VERMELHO ===
+  // --- Formações padrão do time vermelho ---
   const tacticalFormations = {
     "4-4-2": [
-      { id: 13, left: 100, top: 220 }, // LD
-      { id: 14, left: 150, top: 180 }, // ZAG E
-      { id: 15, left: 150, top: 260 }, // ZAG D
-      { id: 16, left: 100, top: 300 }, // LE
-      { id: 17, left: 250, top: 200 }, // VOL 1
-      { id: 18, left: 250, top: 280 }, // VOL 2
-      { id: 19, left: 350, top: 180 }, // MEI E
-      { id: 20, left: 350, top: 300 }, // MEI D
-      { id: 21, left: 450, top: 210 }, // ATA E
-      { id: 22, left: 450, top: 280 }  // ATA D
+      { id: 13, left: 100, top: 220 },
+      { id: 14, left: 150, top: 180 },
+      { id: 15, left: 150, top: 260 },
+      { id: 16, left: 100, top: 300 },
+      { id: 17, left: 250, top: 200 },
+      { id: 18, left: 250, top: 280 },
+      { id: 19, left: 350, top: 180 },
+      { id: 20, left: 350, top: 300 },
+      { id: 21, left: 450, top: 210 },
+      { id: 22, left: 450, top: 280 }
     ],
     "4-3-3": [
       { id: 13, left: 100, top: 220 },
@@ -117,13 +112,17 @@ app.post('/ai/analyze-tactical', (req, res) => {
     ]
   };
 
-  // === Seleciona a formação recomendada ===
-  let red = tacticalFormations[recommendedFormation] || tacticalFormations["4-4-2"];
+  // --- Escolher resposta tática do vermelho ---
+  const recommendedFormation = (detectedFormation === "4-3-3") ? "4-4-2" :
+                               (detectedFormation === "3-5-2") ? "4-3-3" :
+                               "3-5-2";
 
-  // === Ajuste leve em relação à bola (ex: aproximação ou recuo) ===
+  let red = tacticalFormations[recommendedFormation];
+
+  // --- Ajuste leve à bola ---
   if (ball && ball.left && ball.top) {
-    const adjustX = (ball.left - 300) * 0.1; // aproxima 10% horizontalmente
-    const adjustY = (ball.top - 250) * 0.05; // leve ajuste vertical
+    const adjustX = (ball.left - 300) * 0.1;
+    const adjustY = (ball.top - 250) * 0.05;
     red = red.map(p => ({
       ...p,
       left: p.left + adjustX,
@@ -131,11 +130,28 @@ app.post('/ai/analyze-tactical', (req, res) => {
     }));
   }
 
-  // === Resposta JSON ===
+  // --- Novo: posicionamento adaptativo do time verde em relação ao time preto ---
+  const greenAdjusted = [];
+  if (black && black.length) {
+    for (let i = 0; i < Math.min(black.length, 11); i++) {
+      const opp = black[i];
+      // Cada jogador verde se posiciona 40px atrás e 10px deslocado lateralmente
+      greenAdjusted.push({
+        id: i + 1,
+        left: opp.left - 40,
+        top: opp.top + ((i % 2 === 0) ? -10 : 10)
+      });
+    }
+  } else if (green) {
+    // fallback: mantém posições originais
+    greenAdjusted.push(...green);
+  }
+
   res.json({
     detectedFormation,
     recommendedFormation,
-    red
+    red,
+    greenAdjusted
   });
 });
 

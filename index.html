@@ -189,9 +189,41 @@ socket.on("update_circle", (data) => {
     overlay.addEventListener('click',async()=>{await document.documentElement.requestFullscreen();overlay.style.display='none';updateButtons();});
     exitBtn.addEventListener('click',async()=>{if(document.exitFullscreen)await document.exitFullscreen();updateButtons();});
 
+// === Funções auxiliares da AI Análise ===
+function getPositions(prefix) {
+  const arr = [];
+  for (let i = 1; i <= 11; i++) { // 11 jogadores
+    const el = document.getElementById(prefix + i);
+    if (el) {
+      arr.push({
+        id: i,
+        left: parseInt(el.style.left || el.offsetLeft),
+        top: parseInt(el.style.top || el.offsetTop)
+      });
+    }
+  }
+  return arr;
+}
+
+function getBall() {
+  const el = document.getElementById('circle24');
+  return {
+    left: parseInt(el.style.left || el.offsetLeft),
+    top: parseInt(el.style.top || el.offsetTop)
+  };
+}
+
+function notify(msg) {
+  const n = document.getElementById('ai-notification');
+  if (!n) return;
+  n.textContent = msg;
+  n.style.display = 'block';
+  setTimeout(() => n.style.display = 'none', 2000);
+}
+
 // === AI Análise 2.0 ===
 async function aiAnalise2() {
-  const btn = document.getElementById('aiBtn');
+  const btn = document.getElementById('ai-analise-btn');
   btn.disabled = true;
   btn.textContent = "Analisando taticamente...";
 
@@ -228,6 +260,12 @@ async function aiAnalise2() {
       notify("✅ AI reposicionou o time vermelho!");
     }
 
+    if (data.greenAdjusted) {
+      animateGreenTeamToPositions(data.greenAdjusted);
+      notify("🟢 Time verde se reposicionou em resposta ao adversário!");
+    }
+
+
   } catch (err) {
     console.error(err);
     notify("⚠️ Erro na análise tática da IA.");
@@ -236,6 +274,8 @@ async function aiAnalise2() {
   btn.disabled = false;
   btn.textContent = "AI Análise 2.0";
 }
+
+document.getElementById('ai-analise-btn').addEventListener('click', aiAnalise2);
 
 // === Função de animação suave ===
 function animateRedTeamToPositions(red) {
