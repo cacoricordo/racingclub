@@ -69,7 +69,7 @@
   </div>
 
   <button id="exit-fullscreen-btn" style="position:fixed;top:330px;left:20px;z-index:10000;">Sair (x)</button>
-  <button id="ai-analise-btn" style="position:fixed;top:330px;left:120px;z-index:10000;">AI Análise</button>
+  <button id="ai-analise-btn" style="position:fixed;top:330px;left:120px;z-index:10000;">Análise IA</button>
   <button id="pen-path-btn" style="position:fixed;top:330px;left:302px;z-index:10000;">✎ Desenho Tático</button>
 
 <script>
@@ -234,19 +234,51 @@ function updateTacticalStatus(info) {
   const panel = document.getElementById('tactical-status');
   if (!panel) return;
 
+  // Limpa painel se não houver info
   if (!info) {
     panel.style.display = 'none';
     return;
   }
 
   const { detectedFormation, phase, red } = info;
+
+  // === Conteúdo do painel com botão de fechar ===
   panel.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+      <strong>📊 Situação Tática</strong>
+      <button id="close-tactical-panel"
+        style="
+          background:transparent;
+          border:none;
+          color:#fff;
+          font-size:16px;
+          font-weight:bold;
+          cursor:pointer;
+          margin-left:8px;
+        "
+        title="Fechar painel">×</button>
+    </div>
+    <hr style="border:0;border-top:1px solid rgba(255,255,255,0.2);margin:6px 0;">
     <b>📋 Tática:</b> ${detectedFormation || '---'}<br>
     <b>🧭 Fase:</b> ${phase || '---'}<br>
     <b>⚫ Jogadores:</b> ${(red && red.length) || 0}
   `;
+
   panel.style.display = 'block';
+
+  // === Evento do botão de fechar ===
+  const closeBtn = document.getElementById('close-tactical-panel');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', () => {
+      panel.style.opacity = '0';
+      setTimeout(() => {
+        panel.style.display = 'none';
+        panel.style.opacity = '1';
+      }, 300);
+    });
+  }
 }
+
 
 function showNotification(msg, bg="#33aaff"){
   const n = document.getElementById('ai-notification');
@@ -455,7 +487,7 @@ document.addEventListener("fullscreenchange", () => {
   display:flex;flex-direction:column;overflow:hidden;z-index:10001;
   font-family:'Segoe UI',sans-serif;font-size:14px;">
   <div id="chat-header" style="background:#222;padding:10px;cursor:pointer;font-weight:600;">
-    💬 José Mourinho (IA)
+    💬 Gustavo Costas (IA)
   </div>
   <div id="chat-body" style="flex:1;overflow-y:auto;padding:10px;display:none;"></div>
   <div id="chat-input-area" style="display:none;border-top:1px solid #333;padding:6px;gap:4px;">
@@ -556,18 +588,18 @@ chatInput.addEventListener("keydown", (e)=>{
   position:fixed;
   top:20px;
   right:20px;
-  background:rgba(0,0,0,0.7);
+  background:rgba(0,0,0,0.8);
   color:#fff;
-  padding:10px 14px;
-  border-radius:8px;
+  padding:14px 16px;
+  border-radius:10px;
   font-family:'Segoe UI',sans-serif;
   font-size:14px;
   z-index:10002;
-  min-width:200px;
-  text-align:left;
-  display:none;
-  line-height:1.4;
+  min-width:220px;
+  line-height:1.5;
   box-shadow:0 0 8px rgba(0,0,0,0.3);
+  display:none;
+  transition:opacity 0.3s ease;
 "></div>
 
 </body>

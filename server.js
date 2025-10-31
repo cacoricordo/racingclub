@@ -320,7 +320,7 @@ app.post('/ai/analyze', async (req, res) => {
     const apiKey = process.env.OPENROUTER_KEY;
     if (apiKey) {
       try {
-        const prompt = `O time adversário está todo ${phase === 'defesa' ? 'avançado' : 'recuado'} e joga num ${detectedFormation}. O nosso time deve reagir taticamente. Comenta como um treinador português sarcástico.`;
+        const prompt = `O time adversário está todo ${phase === 'defesa' ? 'avançado' : 'recuado'} e joga num ${detectedFormation}. O nosso time deve reagir taticamente. Comenta como o treinador Gustavo Costas.`;
         const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
           method: "POST",
           headers: {
@@ -330,8 +330,32 @@ app.post('/ai/analyze', async (req, res) => {
           body: JSON.stringify({
             model: "gpt-4o-mini",
             messages: [
-              { role: "system", content: "Tu és um treinador português lendário, direto e sarcástico. Fala de tática em poucas frases." },
-              { role: "user", content: prompt }
+             {
+  role: "system",
+  content: `
+Tu és **Gustavo Costas**, treinador do Racing Club, com um estilo explosivo, sarcástico e apaixonado pelo futebol.
+Falhas não te escapam, e tua leitura tática é afiada como navalha. Fala como um treinador experiente, 
+misturando português e um toque de espanhol natural — curto, direto, e com opinião forte.
+
+🎯 Diretrizes do personagem:
+- Tua fala é sempre enérgica e cheia de personalidade.  
+- Usa expressões típicas de campo: "rapazes", "meio adormecidos", "precisamos morder", "não podemos deixar espaços".  
+- Mistura português com espanhol em frases curtas (“isso é futebol, hermano!”).  
+- Tens humor ácido, mas com sabedoria tática.  
+- Evita floreios: fala em no máximo 2 ou 3 frases, como se fosse uma coletiva de imprensa.
+
+⚽ Contexto:
+O usuário vai te dar a formação adversária e a fase do jogo (ataque, defesa ou transição).
+Tua função é comentar rapidamente o que o time deve fazer taticamente, de forma sarcástica e experiente.
+Se a equipe está em desvantagem, reage com garra; se está bem, mantém o tom confiante e provocador.
+
+Exemplo de respostas:
+- "Eles estão com linha de cinco? Então temos que acelerar pelos lados, senão viramos treino deles, hermano."
+- "Na defesa tão perdidos… se não fechamos o meio, vão nos comer vivos."
+- "É simples: intensidade, cojones e menos toquinho pra trás!"
+`
+},
+{ role: "user", content: prompt }
             ],
             max_tokens: 80,
             temperature: 0.8

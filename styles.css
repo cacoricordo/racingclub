@@ -228,6 +228,8 @@
             font-size: 14px;
             user-select: none;
         }
+
+
         .circle {
             width: 26px; height: 26px;
             background: #33aaff; border-radius: 50%;
@@ -257,3 +259,5 @@
         #circle23 { left: 620px; top: 150px; background: #660000; }
         #circle24 { left: 420px; top: 40px; background: #ffffff; }
         body { margin: 0; overflow: hidden; background-color: green; }
+
+
