@@ -1,13 +1,22 @@
 <!DOCTYPE html>
-<html>
+<html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <title>OS INVICTOS -- Campo Tático Interativo</title>
+    <title>Racing Club, Campo Tático</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta property="og:title" content="Racing Club, Campo Tático">
+    <meta property="og:description" content="Campeão Invicto em 1913 /1914 /1915 /1918 /1925">
+    <meta property="og:image" content="https://www.osinvictos.com.br/dashboard/racingclub/racingclub-previa.png">
     <link rel="stylesheet" href="styles.css">
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 </head>
-<body style="background-image:url('img/estadium.jpg'); background-size:cover;">
+<body style="
+  background-image: url('img/estadium.jpg');
+  background-size: cover;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-attachment: fixed;
+">
 
   <!-- ===== Campo Tático ===== -->
     <div id="background-square" class="background-square"></div>
@@ -45,16 +54,16 @@
   <div id="circle10" class="circle">10</div>
   <div id="circle11" class="circle">11</div>
 
-  <div id="circle13" class="circle" style="background:#33FFCC;">11</div>
-  <div id="circle14" class="circle" style="background:#33FFCC;">2</div>
+  <div id="circle13" class="circle" style="background:#33FFCC;">2</div>
+  <div id="circle14" class="circle" style="background:#33FFCC;">6</div>
   <div id="circle15" class="circle" style="background:#33FFCC;">3</div>
   <div id="circle16" class="circle" style="background:#33FFCC;">4</div>
-  <div id="circle17" class="circle" style="background:#33FFCC;">5</div>
-  <div id="circle18" class="circle" style="background:#33FFCC;">6</div>
+  <div id="circle17" class="circle" style="background:#33FFCC;">8</div>
+  <div id="circle18" class="circle" style="background:#33FFCC;">5</div>
   <div id="circle19" class="circle" style="background:#33FFCC;">7</div>
-  <div id="circle20" class="circle" style="background:#33FFCC;">8</div>
-  <div id="circle21" class="circle" style="background:#33FFCC;">9</div>
-  <div id="circle22" class="circle" style="background:#33FFCC;">10</div>
+  <div id="circle20" class="circle" style="background:#33FFCC;">10</div>
+  <div id="circle21" class="circle" style="background:#33FFCC;">11</div>
+  <div id="circle22" class="circle" style="background:#33FFCC;">9</div>
   <div id="circle23" class="circle">01</div>
   <div id="circle24" class="circle"></div>
 
@@ -77,8 +86,23 @@
 const SERVER_URL = window.location.origin;
 
 /* ===== CORE: movimento, socket e AI analyze ===== */
-const socket = io(window.location.origin, { transports: ["websocket", "polling"] });
+const socket = io("https://racingclub.onrender.com", {
+  transports: ["websocket", "polling"]
+});
 window.socket = socket;
+
+// === Utilitário: throttle ===
+// limita quantas vezes por segundo um evento pode ser enviado
+function throttle(fn, delay) {
+  let last = 0;
+  return (...args) => {
+    const now = Date.now();
+    if (now - last >= delay) {
+      last = now;
+      fn(...args);
+    }
+  };
+}
 
 const circles = {};
 const dragState = {};
@@ -124,7 +148,15 @@ document.addEventListener("mousemove", (e) => {
   const x = e.clientX - dragState[i].offsetX;
   const y = e.clientY - dragState[i].offsetY;
   moveElement(i, x, y);
-  socket.emit("move_circle", { id: i, left: x, top: y });
+  // throttle para limitar envios a cada 50 ms
+const emitPlayerMove = throttle((id, left, top) => {
+  socket.emit("player-move", { id, left, top });
+}, 50);
+
+// dentro do mousemove
+emitPlayerMove("circle" + i, x, y);
+
+
 });
 
 document.addEventListener("touchmove", (e) => {
@@ -135,7 +167,7 @@ document.addEventListener("touchmove", (e) => {
   const x = touch.clientX - dragState[i].offsetX;
   const y = touch.clientY - dragState[i].offsetY;
   moveElement(i, x, y);
-  socket.emit("move_circle", { id: i, left: x, top: y });
+  socket.emit("player-move", { id: "circle" + i, left: x, top: y });
   e.preventDefault();
 }, { passive: false });
 
@@ -156,6 +188,21 @@ socket.on("update_circle", (data) => {
     el.style.top = (data.top) + 'px';
   }
 });
+
+// E o mesmo para a bola:
+const ball = document.getElementById('circle24');
+ball.addEventListener('mouseup', () => {
+  const left = parseInt(ball.style.left);
+  const top = parseInt(ball.style.top);
+  const emitBallMove = throttle((id, left, top) => {
+  socket.emit("ball-move", { id, left, top });
+}, 50);
+
+// dentro do mousemove da bola
+emitBallMove("circle24", x, y);
+
+});
+
 
 /* ===== AI Análise: envia posições reais do adversário ===== */
 function collectGreenPositions() {
@@ -286,8 +333,8 @@ function showNotification(msg, bg="#33aaff"){
   n.style.background = bg;
   n.style.display = 'block';
   n.style.opacity = '1';
-  setTimeout(()=>{ n.style.opacity = '0'; }, 9500);
-  setTimeout(()=>{ n.style.display = 'none'; }, 10500);
+  setTimeout(()=>{ n.style.opacity = '0'; }, 17500);
+  setTimeout(()=>{ n.style.display = 'none'; }, 18500);
 }
 
 document.getElementById('ai-analise-btn').addEventListener('click', async function(){
@@ -299,7 +346,7 @@ document.getElementById('ai-analise-btn').addEventListener('click', async functi
     const green = collectGreenPositions();
     const ball = getBall();
 
-    const res = await fetch(`${window.location.origin}/ai/analyze`, {
+    const res = await fetch(`https://racingclub.onrender.com/ai/analyze`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ green, ball })
@@ -449,6 +496,99 @@ document.getElementById('ai-analise-btn').addEventListener('click', async functi
   }
 })();
 </script>
+<script>
+  // === Funções auxiliares ===
+  function getPositions(prefix) {
+    const arr = [];
+    for (let i = 2; i <= 11; i++) {
+      const el = document.getElementById(prefix + i);
+      if (el) {
+        arr.push({
+          id: i,
+          left: parseInt(el.style.left || el.offsetLeft),
+          top: parseInt(el.style.top || el.offsetTop)
+        });
+      }
+    }
+    return arr;
+  }
+
+  function getBall() {
+    const el = document.getElementById('circle24');
+    return {
+      left: parseInt(el.style.left || el.offsetLeft),
+      top: parseInt(el.style.top || el.offsetTop)
+    };
+  }
+
+  function notify(msg, duration = 5000) {
+    const n = document.getElementById('ai-notification');
+    n.textContent = msg;
+    n.style.display = 'block';
+    clearTimeout(n.timer);
+    n.timer = setTimeout(() => (n.style.display = 'none'), duration);
+  }
+
+  function animateTeam(prefix, positions) {
+    for (const p of positions) {
+      const el = document.getElementById(prefix + p.id);
+      if (el) {
+        el.style.transition = 'left 1s ease, top 1s ease';
+        el.style.left = p.left + 'px';
+        el.style.top = p.top + 'px';
+      }
+    }
+  }
+
+  // === Botão da Análise IA ===
+  const aiBtn = document.getElementById('ai-analise-btn');
+  aiBtn.addEventListener('click', async function() {
+    aiBtn.disabled = true;
+    aiBtn.textContent = "Analisando... ⚙️";
+    notify("🤖 O Mister está avaliando o adversário...", 3000);
+
+    try {
+      const green = getPositions('circle'); // time verde (IDs 13–22)
+      const black = getPositions('black');  // time preto (IDs 2–11)
+      const ball = getBall();
+
+      // 🌐 Usa HTTPS automaticamente se estiver no Render
+      const SERVER_URL = window.location.origin;
+
+      const res = await fetch(`${SERVER_URL}/ai/analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ green, black, ball })
+      });
+
+      if (!res.ok) throw new Error(`Erro HTTP ${res.status}`);
+      const data = await res.json();
+
+      // === Retornos da IA ===
+      if (data.detectedFormation) {
+        notify(`🧠 Esquema adversário: ${data.detectedFormation}`, 4000);
+      }
+
+      if (data.red) {
+        animateTeam('circle', data.red);
+        notify("✅ Time verde reposicionado taticamente!", 4000);
+      }
+
+      if (data.coachComment) {
+        setTimeout(() => {
+          notify(`🎙️ Mister: ${data.coachComment}`, 7000);
+        }, 1000);
+      }
+
+    } catch (err) {
+      console.error("AI analyze error:", err);
+      notify("❌ Erro na análise da IA! Verifique conexão.", 5000);
+    }
+
+    aiBtn.disabled = false;
+    aiBtn.textContent = "AI Análise";
+  });
+</script>
 
 <!-- Chat markup + script (mantido igual ao seu original) -->
 <!-- ... (se preferir, mantenho o bloco de chat original sem alterações) -->
@@ -486,9 +626,10 @@ document.addEventListener("fullscreenchange", () => {
   background:rgba(0,0,0,0.8);color:#fff;border-radius:10px;
   display:flex;flex-direction:column;overflow:hidden;z-index:10001;
   font-family:'Segoe UI',sans-serif;font-size:14px;">
-  <div id="chat-header" style="background:#222;padding:10px;cursor:pointer;font-weight:600;">
-    💬 Gustavo Costas (IA)
-  </div>
+<div id="chat-header" style="background:#222;padding:10px;cursor:pointer;font-weight:600;display:flex;align-items:center;gap:8px;color:#fff;">
+  <img src="./img/assets/escudo-racingclub.png" alt="Zenon" style="width:24px;height:24px;border-radius:50%;">
+  Gustavo Costas
+</div>
   <div id="chat-body" style="flex:1;overflow-y:auto;padding:10px;display:none;"></div>
   <div id="chat-input-area" style="display:none;border-top:1px solid #333;padding:6px;gap:4px;">
     <input id="chat-input" type="text" placeholder="Fala com o mister..." 
@@ -566,12 +707,13 @@ chatSend.addEventListener("click", async ()=>{
     appendMessage("user", message);
     chatInput.value = "";
     try {
-        // Correção de sintaxe anterior: use '+' para concatenar a URL
-        const res = await fetch(`${window.location.origin}/api/chat`, {
-            method:"POST",
-            headers:{ "Content-Type":"application/json" },
-            body: JSON.stringify({ message })
-        });
+        const res = await fetch(`https://racingclub.onrender.com/api/chat`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+            message: message  // envia o texto que o usuário digitou
+         })
+    });
         const data = await res.json();
         appendMessage("bot", data.reply || "O mister ficou em silêncio...");
     } catch(e){
@@ -582,6 +724,63 @@ chatSend.addEventListener("click", async ()=>{
 
 chatInput.addEventListener("keydown", (e)=>{
     if(e.key==="Enter"){ chatSend.click(); }
+});
+</script>
+<!-- === WebSocket: sincroniza jogadores em tempo real === -->
+<script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+<script>
+  socket.on("connect", () => {
+    console.log("📡 Conectado ao servidor WebSocket");
+  });
+
+  socket.on("disconnect", () => {
+    console.log("🔌 Desconectado do servidor");
+  });
+
+  // 🔴 Quando o servidor emitir uma nova análise tática
+  socket.on("tactical-analysis", (data) => {
+    console.log("📊 Atualização tática recebida:", data);
+
+    // Atualiza jogadores (ex: time verde/red)
+    if (data.red) {
+      for (const p of data.red) {
+        const el = document.getElementById("circle" + p.id);
+        if (el) {
+          el.style.transition = "left 1s ease, top 1s ease";
+          el.style.left = p.left + "px";
+          el.style.top = p.top + "px";
+        }
+      }
+    }
+
+    // Mostra a fala do Mister
+    if (data.coachComment) {
+      const n = document.getElementById("ai-notification");
+      if (n) {
+        n.textContent = `🎙️ ${data.coachComment}`;
+        n.style.display = "block";
+        setTimeout(() => (n.style.display = "none"), 5000);
+      }
+    }
+  });
+
+// === Sincroniza jogadores em tempo real ===
+socket.on("player-move", (data) => {
+  const el = document.getElementById(data.id);
+  if (el) {
+    el.style.transition = "left 0.3s linear, top 0.3s linear";
+    el.style.left = data.left + "px";
+    el.style.top = data.top + "px";
+  }
+});
+
+socket.on("ball-move", (data) => {
+  const el = document.getElementById(data.id);
+  if (el) {
+    el.style.transition = "left 0.2s linear, top 0.2s linear";
+    el.style.left = data.left + "px";
+    el.style.top = data.top + "px";
+  }
 });
 </script>
 <div id="tactical-status" style="

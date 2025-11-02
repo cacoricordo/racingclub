@@ -1,400 +1,260 @@
-// ==========================
-//  OS INVICTOS SERVER ⚽
-//  Integra campo tático + AI + Chat do "Treinador Português"
-// ==========================
+// ===== ⚽ Tactical AI 4.2.2-FIX =====
+import express from "express";
+import cors from "cors";
+import bodyParser from "body-parser";
+import fetch from "node-fetch";
+import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
+import { createServer } from "http";
+import { Server } from "socket.io";
 
-require('dotenv').config();
-const express = require('express');
-const http = require('http');
-const cors = require('cors');
-const { Server } = require('socket.io');
-const bodyParser = require('body-parser');
-const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
+dotenv.config();
 
+// === Configura servidor HTTP e WebSocket ===
 const app = express();
-
-// ======= ⚙️ CORS GLOBAL =======
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*"); // ✅ Permite tudo
-  res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(200);
-  }
-  next();
+const httpServer = createServer(app);
+const io = new Server(httpServer, {
+  cors: { origin: "*" }
 });
+
+io.on("connection", (socket) => {
+  console.log("🔌 Novo cliente conectado");
+
+  // 🟢 Quando um jogador for movido (drag)
+  socket.on("player-move", (data) => {
+    // retransmite para todos os outros clientes (menos quem enviou)
+    socket.broadcast.emit("player-move", data);
+  });
+
+  // ⚽ Quando a bola for movida
+  socket.on("ball-move", (data) => {
+    socket.broadcast.emit("ball-move", data);
+  });
+
+  socket.on("disconnect", () => console.log("❌ Cliente desconectado"));
+});
+
+// === Suporte a caminhos absolutos (necessário para Render e ES Modules) ===
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// === Servir o frontend estático (index.html + assets) ===
+app.use(express.static(__dirname));
+
+// === Rota padrão: abre o index.html ===
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "index.html"));
+});
+
 
 app.use(cors());
 app.use(bodyParser.json());
-app.use(express.static(__dirname));
 
-const server = http.createServer(app);
-
-// ======= ⚽ Socket.IO =======
-const io = new Server(server, {
-  transports: ["websocket", "polling"], // força compatibilidade com Render
-  cors: {
-    origin: "*", // ✅ libera todos os domínios
-    methods: ["GET", "POST"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: true
-  }
-});
-
-io.on('connection', (socket) => {
-  console.log('🔌 Novo cliente conectado');
-
-  socket.on('move_circle', (data) => {
-    socket.broadcast.emit('update_circle', data);
-  });
-
-  socket.on('path_draw', (data) => {
-    socket.broadcast.emit('path_draw', data);
-  });
-
-  socket.on('disconnect', () => {
-    console.log('❌ Cliente desconectado');
-  });
-});
-
-// ======= 🤖 AI Análise 3.0 =======
-// ===== Tática / util =====
+// === Constantes do campo ===
 const FIELD_WIDTH = 600;
 const FIELD_HEIGHT = 300;
 const CENTER_X = FIELD_WIDTH / 2;
 
-function analyzeGreenPositions(green) {
-  const valid = (green || []).filter(g => typeof g.left === 'number' && typeof g.top === 'number');
-  if (valid.length === 0) return null;
+// === Função de detecção de formação (simplificada) ===
+function detectFormationAdvanced(players) {
+  if (!players || players.length < 8) return "4-3-3";
 
-  const xs = valid.map(p => p.left);
-  const ys = valid.map(p => p.top);
+  const RADIUS = 100;
+  const clusters = [];
 
-  const avgX = xs.reduce((s,a) => s+a, 0)/xs.length;
-  const avgY = ys.reduce((s,a) => s+a, 0)/ys.length;
-  const spreadX = Math.max(...xs) - Math.min(...xs);
-  const spreadY = Math.max(...ys) - Math.min(...ys);
-
-  const thirds = { defense:0, middle:0, attack:0 };
-  const thirdW = FIELD_WIDTH/3;
-  for (const p of valid) {
-    if (p.left < thirdW) thirds.defense++;
-    else if (p.left < 2*thirdW) thirds.middle++;
-    else thirds.attack++;
+  function findCluster(px, py) {
+    for (const c of clusters) {
+      const dx = px - c.centerX;
+      const dy = py - c.centerY;
+      if (Math.sqrt(dx * dx + dy * dy) < RADIUS) return c;
+    }
+    return null;
   }
 
-  return {
-    avgX, avgY, spreadX, spreadY, thirds, count: valid.length
-  };
-}
-
-function detectFormationAdvanced(players) {
-  if (!players || players.length === 0) return '4-3-3';
-
-  // Extrai apenas o eixo Y
-  const ys = players.map(p => p.top).sort((a, b) => a - b);
-
-  // Agrupa jogadores por faixas verticais (~linhas horizontais no campo)
-  const clusters = [];
-  const tolerance = 45; // distância máxima entre jogadores da mesma linha
-
-  for (const y of ys) {
-    const lastCluster = clusters[clusters.length - 1];
-    if (!lastCluster || Math.abs(y - lastCluster.avg) > tolerance) {
-      clusters.push({ values: [y], avg: y });
+  for (const p of players) {
+    const c = findCluster(p.left, p.top);
+    if (c) {
+      c.players.push(p);
+      c.centerX = (c.centerX * (c.players.length - 1) + p.left) / c.players.length;
+      c.centerY = (c.centerY * (c.players.length - 1) + p.top) / c.players.length;
     } else {
-      lastCluster.values.push(y);
-      lastCluster.avg = lastCluster.values.reduce((s, v) => s + v, 0) / lastCluster.values.length;
+      clusters.push({ players: [p], centerX: p.left, centerY: p.top });
     }
   }
 
-  // Contagem por linha
-  const lineCounts = clusters.map(c => c.values.length);
+  clusters.sort((a, b) => a.centerX - b.centerX);
+  const counts = clusters.map(c => c.players.length);
+  const signature = counts.join("-");
 
-  // Ordena linhas por número de jogadores (defesa -> ataque)
-  const sorted = lineCounts.sort((a, b) => b - a);
+  if (signature.startsWith("4-4-2")) return "4-4-2";
+  if (signature.startsWith("3-5-2")) return "3-5-2";
+  if (signature.startsWith("4-2-3-1")) return "4-2-3-1";
+  if (signature.startsWith("3-4-3")) return "3-4-3";
+  if (signature.startsWith("4-3-3")) return "4-3-3";
 
-  // Heurísticas simples para correspondência
-  const signature = sorted.join('-');
-
-  if (signature.startsWith('4-4-2')) return '4-4-2';
-  if (signature.startsWith('3-5-2')) return '3-5-2';
-  if (signature.startsWith('5-3-2')) return '5-3-2';
-  if (signature.startsWith('4-3-3')) return '4-3-3';
-  if (signature.startsWith('4-2-3-1')) return '4-2-3-1';
-  if (signature.startsWith('3-4-3')) return '3-4-3';
-
-  // fallback
-  return '4-3-3';
+  return "4-4-2";
 }
 
+// === Formações base ===
 const FORMATIONS = {
-  "4-3-3": [
-    // Defesa (linha de 4)
-    { id:13, zone:[80, 80] },   // LD
-    { id:14, zone:[80, 220] },  // LE
-    { id:15, zone:[100, 130] }, // ZAG D
-    { id:16, zone:[100, 170] }, // ZAG E
-
-    // Meio (linha de 3)
-    { id:17, zone:[210, 100] }, // VOL
-    { id:18, zone:[210, 150] }, // MEI C
-    { id:19, zone:[210, 200] }, // MEI E
-
-    // Ataque (linha de 3)
-    { id:20, zone:[320, 80] },  // Ponta D
-    { id:21, zone:[330, 150] }, // Centroavante
-    { id:22, zone:[320, 220] }  // Ponta E
-  ],
-
-  "3-5-2": [
-    // Defesa (linha de 3)
-    { id:13, zone:[80, 100] },
-    { id:14, zone:[80, 150] },
-    { id:15, zone:[80, 200] },
-
-    // Meio (linha de 5)
-    { id:16, zone:[180, 70] },
-    { id:17, zone:[180, 110] },
-    { id:18, zone:[180, 150] },
-    { id:19, zone:[180, 190] },
-    { id:20, zone:[180, 230] },
-
-    // Ataque (linha de 2)
-    { id:21, zone:[300, 120] },
-    { id:22, zone:[300, 180] }
-  ],
-
   "4-4-2": [
-    // Defesa
-    { id:13, zone:[70, 80] },
-    { id:14, zone:[70, 220] },
-    { id:15, zone:[100, 130] },
-    { id:16, zone:[100, 170] },
-
-    // Meio
-    { id:17, zone:[200, 80] },
-    { id:18, zone:[200, 130] },
-    { id:19, zone:[200, 170] },
-    { id:20, zone:[200, 220] },
-
-    // Ataque
-    { id:21, zone:[320, 120] },
-    { id:22, zone:[320, 180] }
+    { id:13, zone:[70, 80] }, { id:14, zone:[70, 220] },
+    { id:15, zone:[100, 130] }, { id:16, zone:[100, 170] },
+    { id:17, zone:[200, 80] }, { id:18, zone:[200, 130] },
+    { id:19, zone:[200, 170] }, { id:20, zone:[200, 220] },
+    { id:21, zone:[320, 120] }, { id:22, zone:[320, 180] }
   ],
-
-  "4-2-3-1": [
-    // Defesa
-    { id:13, zone:[70, 80] },
-    { id:14, zone:[70, 220] },
-    { id:15, zone:[100, 130] },
-    { id:16, zone:[100, 170] },
-
-    // Volantes
-    { id:17, zone:[180, 120] },
-    { id:18, zone:[180, 180] },
-
-    // Meias ofensivos
-    { id:19, zone:[240, 100] },
-    { id:20, zone:[240, 150] },
-    { id:21, zone:[240, 200] },
-
-    // Centroavante
-    { id:22, zone:[320, 150] }
+  "4-3-3": [
+    { id:13, zone:[80,80] }, { id:14, zone:[80,220] },
+    { id:15, zone:[100,130] }, { id:16, zone:[100,170] },
+    { id:17, zone:[210,100] }, { id:18, zone:[210,150] }, { id:19, zone:[210,200] },
+    { id:20, zone:[320,80] }, { id:21, zone:[330,150] }, { id:22, zone:[320,220] }
   ]
 };
 
-// --- buildRedFromFormation (corrigido) ---
-const FIELD_LEFT = 20; // offset horizontal do campo (CSS: left:20px)
-const FIELD_TOP = 20;  // offset vertical do campo (CSS: top:20px)
-
-function buildRedFromFormation(formationKey, stats, ball, green) {
-  const formation = FORMATIONS[formationKey] || FORMATIONS['4-3-3'];
+// === Gera o time vermelho ===
+function buildRedFromFormation(formationKey, ball) {
+  const formation = FORMATIONS[formationKey] || FORMATIONS["4-3-3"];
   const red = [];
 
-  // Calcula o centroide do time adversário (green)
-  let centroidX = CENTER_X, centroidY = FIELD_HEIGHT / 2;
-  const valid = (green || []).filter(g => typeof g.left === 'number' && typeof g.top === 'number');
-  if (valid.length > 0) {
-    const xs = valid.map(p => p.left - FIELD_LEFT);
-    const ys = valid.map(p => p.top - FIELD_TOP);
-    centroidX = Math.round(xs.reduce((s, p) => s + p, 0) / xs.length);
-    centroidY = Math.round(ys.reduce((s, p) => s + p, 0) / ys.length);
-  }
-
-  // Define a fase (dependendo da posição da bola)
-  const phase = ball && typeof ball.left === 'number'
-    ? ((ball.left - FIELD_LEFT) > CENTER_X ? 'defesa' : 'ataque')
-    : 'neutro';
-
-  // Ajustes de deslocamento leve conforme fase e centroide
-  const push = phase === 'ataque' ? 30 : (phase === 'defesa' ? -20 : 0);
-
   for (const pos of formation) {
-    const lateralShift = Math.max(-25, Math.min(25, Math.round((centroidY - FIELD_HEIGHT / 2) / 6)));
-    const forwardShift = push + Math.round((centroidX - CENTER_X) / 12);
-
-    // Espelhar formação (seu time ataca da direita → esquerda)
-    let relX = FIELD_WIDTH - pos.zone[0] + forwardShift - 30;
-    let relY = pos.zone[1] + lateralShift + (Math.random() * 12 - 6);
-
-    // Mantém dentro do campo
-    relX = Math.max(20, Math.min(FIELD_WIDTH - 30, Math.round(relX)));
-    relY = Math.max(20, Math.min(FIELD_HEIGHT - 20, Math.round(relY)));
-
-    // Converter para coordenadas absolutas na página
-    const absX = FIELD_LEFT + relX;
-    const absY = FIELD_TOP + relY; // 🔧 REMOVIDO o +20 extra
-
-    red.push({ id: pos.id, left: absX, top: absY });
+    const jitter = Math.random() * 8 - 4;
+    red.push({
+      id: pos.id,
+      left: FIELD_WIDTH - pos.zone[0],
+      top: pos.zone[1] + jitter
+    });
   }
 
-  // Goleiro (id 23) sempre no gol direito
-  const GK_MARGIN = 20;
-  const gkTop = (ball && typeof ball.top === 'number')
-    ? Math.max(30, Math.min(FIELD_HEIGHT - 40, Math.round(ball.top - FIELD_TOP)))
-    : Math.round(FIELD_HEIGHT / 2);
+  // Goleiro acompanha 30% do movimento vertical da bola
+  const gkTop = ball && typeof ball.top === "number"
+    ? FIELD_HEIGHT / 2 + (ball.top - FIELD_HEIGHT / 2) * 0.3
+    : FIELD_HEIGHT / 2;
 
-  const gkAbsLeft = FIELD_LEFT + FIELD_WIDTH - GK_MARGIN;
-  const gkAbsTop = FIELD_TOP + gkTop; // 🔧 REMOVIDO o +20 extra
+  red.unshift({
+    id: 23,
+    left: FIELD_WIDTH - 10,
+    top: gkTop
+  });
 
-  red.unshift({ id: 23, left: gkAbsLeft, top: gkAbsTop });
-
-  return { red, phase };
+  return { red };
 }
 
-// ===== Endpoint /ai/analyze =====
-app.post('/ai/analyze', async (req, res) => {
+// === Endpoint principal ===
+app.post("/ai/analyze", async (req, res) => {
   try {
     const { green = [], black = [], ball = {} } = req.body;
+    console.log("[AI ANALYZE] Recebi:", { greenCount: green.length, blackCount: black.length, ball });
 
-    console.log('[AI ANALYZE] Recebi:', {
-      greenCount: green.length,
-      blackCount: black.length,
-      ball
-    });
-
-    // === Detecta formações ===
     const detectedFormation = detectFormationAdvanced(black.length ? black : green);
-    const stats = analyzeGreenPositions(green);
+    const { red } = buildRedFromFormation(detectedFormation, ball);
 
-    // === Determina fase de jogo ===
-    let phase = 'neutro';
-    if (ball.left > CENTER_X && black.some(p => p.left > CENTER_X - 50)) phase = 'defesa';
-    else if (ball.left < CENTER_X && green.some(p => p.left < CENTER_X - 50)) phase = 'ataque';
-    else if (black.every(p => p.left < CENTER_X - 50)) phase = 'avançado'; // adversário todo recuado
+    // === Fase simples ===
+    let phase = "neutro";
+    if (ball.left > CENTER_X && black.some(p => p.left > CENTER_X - 50)) phase = "defesa";
+    else if (ball.left < CENTER_X && green.some(p => p.left < CENTER_X - 50)) phase = "ataque";
+    else if (black.every(p => p.left < CENTER_X - 50)) phase = "avançado";
 
-    // === Monta time vermelho conforme tática adversária ===
-    const { red } = buildRedFromFormation(detectedFormation, stats, ball, green);
+// === Gustavo Costas, treinador do Racing Club ===
+let coachComment = `El rival juega en ${detectedFormation} y nosotros estamos en la fase ${phase}.`;
 
-    // === 🟢 Novo: reposiciona o time verde em relação ao time preto ===
-    const greenAdjusted = [];
-    if (black.length > 0) {
-      // Calcula linha média do adversário
-      const oppAvgX = black.reduce((s, p) => s + p.left, 0) / black.length;
+const apiKey = process.env.OPENROUTER_KEY;
+if (apiKey) {
+  try {
+    const prompt = `
+    El equipo rival juega con un ${detectedFormation} y está en fase de ${phase}.
+    Comentá la situación como Gustavo Costas, entrenador del Racing Club de Avellaneda — con pasión, carácter y mentalidad de equipo grande.
+    Hablá de actitud, entrega y orgullo por la camiseta.
+    `;
 
-      for (let i = 0; i < Math.min(green.length, black.length); i++) {
-        const g = green[i];
-        const b = black[i];
-        if (!g || !b) continue;
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          { 
+            role: "system", 
+            content: `
+            Sos Gustavo Costas, el entrenador del Racing Club de Avellaneda.
 
-        // Ajustes de posicionamento baseados na fase
-        let offsetX = 0;
-        if (phase === 'defesa') offsetX = -60;       // recua
-        else if (phase === 'ataque') offsetX = 40;   // avança
-        else if (phase === 'avançado') offsetX = 80; // sobe linhas
+            Hablás en español argentino, con pasión, energía y autenticidad.
+            Sos un técnico carismático, con mucha conexión con la gente y los jugadores.
+            Transmitís emoción, intensidad y amor por la camiseta.
 
-        const offsetY = (i % 2 === 0 ? -15 : 15);
-        greenAdjusted.push({
-          id: g.id,
-          left: Math.max(30, Math.min(FIELD_WIDTH - 30, b.left + offsetX)),
-          top: Math.max(30, Math.min(FIELD_HEIGHT - 30, b.top + offsetY))
-        });
-      }
-    } else {
-      greenAdjusted.push(...green);
-    }
+            — Tu personalidad:
+              * Apasionado, frontal y comprometido.
+              * Tenés un discurso fuerte, directo y lleno de energía.
+              * Valorás la actitud, el sacrificio y el trabajo colectivo.
+              * No tolerás la falta de entrega ni la desconexión emocional con el equipo.
+              * Defendés la historia del club con orgullo.
 
-    // === Gera comentário do treinador ===
-    let coachComment = `O adversário joga em ${detectedFormation}, e nós estamos na fase ${phase}.`;
-    const apiKey = process.env.OPENROUTER_KEY;
-    if (apiKey) {
-      try {
-        const prompt = `O time adversário está todo ${phase === 'defesa' ? 'avançado' : 'recuado'} e joga num ${detectedFormation}. O nosso time deve reagir taticamente. Comenta como o treinador Gustavo Costas.`;
-        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${apiKey}`,
-            "Content-Type": "application/json"
+            — Tu estilo de hablar:
+              * Emocional, motivador y con tono de líder de vestuario.
+              * Usás frases típicas del fútbol argentino:
+                - “esto es Racing, hay que dejar todo”
+                - “los partidos se ganan con el alma”
+                - “nadie puede relajarse ni un segundo”
+                - “hay que correr, meter y creer”
+              * Hablás con el corazón y con fuerza, pero siempre desde la pasión por el equipo.
+              * Alternás entre la bronca constructiva y la motivación positiva.
+
+            — Filosofía:
+              * El fútbol se juega con actitud, inteligencia y corazón.
+              * Se puede perder, pero nunca sin dejar todo en la cancha.
+              * Creés que el compromiso colectivo es más importante que el talento individual.
+              * El grupo y la identidad del club están por encima de todo.
+
+            — Ejemplo:
+            “Esto es Racing. Acá no se negocia la actitud.  
+            Podemos jugar bien o mal, pero hay que dejar el alma.  
+            El que entra a la cancha tiene que representar a la gente con orgullo.”
+
+            Respondé siempre en español argentino, con intensidad, emoción y liderazgo, como el verdadero Gustavo Costas.
+            `
           },
-          body: JSON.stringify({
-            model: "gpt-4o-mini",
-            messages: [
-             {
-  role: "system",
-  content: `
-Tu és **Gustavo Costas**, treinador do Racing Club, com um estilo explosivo, sarcástico e apaixonado pelo futebol.
-Falhas não te escapam, e tua leitura tática é afiada como navalha. Fala como um treinador experiente, 
-misturando português e um toque de espanhol natural — curto, direto, e com opinião forte.
-
-🎯 Diretrizes do personagem:
-- Tua fala é sempre enérgica e cheia de personalidade.  
-- Usa expressões típicas de campo: "rapazes", "meio adormecidos", "precisamos morder", "não podemos deixar espaços".  
-- Mistura português com espanhol em frases curtas (“isso é futebol, hermano!”).  
-- Tens humor ácido, mas com sabedoria tática.  
-- Evita floreios: fala em no máximo 2 ou 3 frases, como se fosse uma coletiva de imprensa.
-
-⚽ Contexto:
-O usuário vai te dar a formação adversária e a fase do jogo (ataque, defesa ou transição).
-Tua função é comentar rapidamente o que o time deve fazer taticamente, de forma sarcástica e experiente.
-Se a equipe está em desvantagem, reage com garra; se está bem, mantém o tom confiante e provocador.
-
-Exemplo de respostas:
-- "Eles estão com linha de cinco? Então temos que acelerar pelos lados, senão viramos treino deles, hermano."
-- "Na defesa tão perdidos… se não fechamos o meio, vão nos comer vivos."
-- "É simples: intensidade, cojones e menos toquinho pra trás!"
-`
-},
-{ role: "user", content: prompt }
-            ],
-            max_tokens: 80,
-            temperature: 0.8
-          })
-        });
-
-        const data = await response.json();
-        coachComment = data?.choices?.[0]?.message?.content?.trim() || coachComment;
-      } catch (err) {
-        console.warn('[AI ANALYZE] OpenRouter falhou:', err.message);
-      }
-    }
-
-    // === Retorno completo ===
-    res.json({
-      detectedFormation,
-      phase,
-      red,
-      greenAdjusted,
-      coachComment
+          { role: "user", content: prompt }
+        ],
+        max_tokens: 120,
+        temperature: 0.85
+      })
     });
+
+    const data = await response.json();
+    coachComment = data?.choices?.[0]?.message?.content?.trim() || coachComment;
+  } catch (err) {
+    console.warn('[AI ANALYZE] OpenRouter falló:', err.message);
+  }
+}
+
+
+    // === Envia resultado para o front-end
+    res.json({ detectedFormation, phase, red, coachComment });
+
+    // 🔁 Opcional: envia pelo WebSocket também
+    io.emit("tactical-analysis", { detectedFormation, phase, red, coachComment });
 
   } catch (err) {
-    console.error('[AI ANALYZE] Erro geral:', err);
-    res.status(500).json({ error: 'Falha interna na AI Tática 3.5' });
+    console.error("[AI ANALYZE ERROR]", err);
+    res.status(500).json({ error: "Erro interno na IA" });
   }
 });
 
-
-// ======= 🧠 Chat (OpenRouter) =======
-app.post('/api/chat', async (req, res) => {
-  const message = req.body.message;
-  const apiKey = process.env.OPENROUTER_KEY;
-
-  if (!apiKey) {
-    return res.status(500).json({ reply: "Erro interno: OPENROUTER_KEY não configurada." });
-  }
-
+// === Endpoint de Chat com Gustavo Costas (Racing Club) ===
+app.post("/api/chat", async (req, res) => {
   try {
+    const { message } = req.body;
+    if (!message) return res.status(400).json({ error: "Mensaje ausente." });
+
+    const apiKey = process.env.OPENROUTER_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: "Falta la clave OPENROUTER_KEY." });
+    }
+
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -406,50 +266,68 @@ app.post('/api/chat', async (req, res) => {
         messages: [
           {
             role: "system",
-  content: `
-Tu és **Gustavo Costas**, treinador do Racing Club, com um estilo explosivo, sarcástico e apaixonado pelo futebol.
-Falhas não te escapam, e tua leitura tática é afiada como navalha. Fala como um treinador experiente, 
-misturando português e um toque de espanhol natural — curto, direto, e com opinião forte.
+            content: `
+            Sos Gustavo Costas, el entrenador del Racing Club de Avellaneda.
 
-🎯 Diretrizes do personagem:
-- Tua fala é sempre enérgica e cheia de personalidade.  
-- Usa expressões típicas de campo: "rapazes", "meio adormecidos", "precisamos morder", "não podemos deixar espaços".  
-- Mistura português com espanhol em frases curtas (“isso é futebol, hermano!”).  
-- Tens humor ácido, mas com sabedoria tática.  
-- Evita floreios: fala em no máximo 2 ou 3 frases, como se fosse uma coletiva de imprensa.
+            Hablás en español argentino, con pasión, fuerza y claridad.  
+            Sos un técnico de carácter, que vive el fútbol con intensidad emocional y compromiso total.
 
-⚽ Contexto:
-O usuário vai te dar a formação adversária e a fase do jogo (ataque, defesa ou transição).
-Tua função é comentar rapidamente o que o time deve fazer taticamente, de forma sarcástica e experiente.
-Se a equipe está em desvantagem, reage com garra; se está bem, mantém o tom confiante e provocador.
+            — Tu personalidad:
+              * Apasionado, frontal y muy comprometido con el club.
+              * Tenés una conexión especial con la gente y los jugadores: hablás con el corazón.
+              * Valorás el esfuerzo, la actitud y el orden defensivo.
+              * Creés en la entrega, el sacrificio y el trabajo colectivo por encima del talento individual.
+              * Cuando hablás, lo hacés con energía, pero siempre desde la convicción.
 
-Exemplo de respostas:
-- "Eles estão com linha de cinco? Então temos que acelerar pelos lados, senão viramos treino deles, hermano."
-- "Na defesa tão perdidos… se não fechamos o meio, vão nos comer vivos."
-- "É simples: intensidade, cojones e menos toquinho pra trás!"
-`
-},
+            — Tu forma de hablar:
+              * Usás frases cargadas de emoción y motivación.
+              * Tu tono es directo, a veces vehemente, pero siempre sincero.
+              * Usás expresiones típicas del fútbol argentino:
+                - “hay que dejar todo”
+                - “esto es Racing, hay que jugar con el alma”
+                - “los partidos se ganan con actitud y compromiso”
+                - “nadie puede relajarse ni un segundo”
+                - “el equipo tiene que correr y pensar”
+              * No te escondés detrás de excusas: asumís la responsabilidad del equipo.
+
+            — Filosofía:
+              * El fútbol es trabajo, sacrificio y orgullo por la camiseta.
+              * Querés equipos intensos, solidarios y con mentalidad ganadora.
+              * Valorás la unión del grupo y la entrega total en cada jugada.
+              * Siempre destacás la importancia de jugar “con el corazón y con la cabeza”.
+
+            — Ejemplo:
+            “Esto es Racing. Acá no se negocia la actitud.  
+            Podemos jugar bien o mal, pero hay que correr, meter y dejar todo por esta camiseta.”
+
+            Respondé siempre en español argentino, con pasión, energía y autenticidad, como Gustavo Costas.
+            `
+          },
           { role: "user", content: message }
         ],
-        max_tokens: 200,
-        temperature: 0.9
-      }),
+        max_tokens: 180,
+        temperature: 0.85
+      })
     });
 
     const data = await response.json();
     const reply =
-      data.choices?.[0]?.message?.content?.trim() ||
-      "O mister não tem tempo pra conversa fiada.";
+      data?.choices?.[0]?.message?.content?.trim() ||
+      "Costas aprieta los puños, mira al equipo y dice en silencio: ‘hay que dejar todo, carajo’.";
+    
     res.json({ reply });
+
   } catch (err) {
-    console.error("Erro no OpenRouter:", err);
-    res.json({ reply: "O mister não respondeu... deve estar irritado com o árbitro." });
+    console.error("[CHAT ERROR]", err);
+    res.status(500).json({ error: "Error en la conversación con Gustavo Costas." });
   }
 });
 
-// ======= 🚀 Start =======
+
+// === Inicialização do Servidor ===
 const PORT = process.env.PORT || 10000;
-server.listen(PORT, () => {
-  console.log(`🏟️  Servidor 4.1 rodando na porta ${PORT}`);
-});
+httpServer.listen(PORT, () =>
+  console.log(`🚀 AI Tática 4.2.2-FIX (WebSocket + Mister) rodando na porta ${PORT}`)
+);
+
 
